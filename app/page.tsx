@@ -1,113 +1,177 @@
-import Image from "next/image";
+'use client';
+import { useState } from 'react'
+import { Parser } from 'node-sql-parser'
+import mermaid from 'mermaid'
+import LoadingSpinner from './components/LoadingSpinner'
+import ErrorMessage from './components/ErrorMessage'
+import DownloadButton from './components/DownloadButton'
+import dynamic from 'next/dynamic'
+
 
 export default function Home() {
+  const [sql, setSql] = useState('')
+  const [diagram, setDiagram] = useState('')
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [isModalOpen, setIsModalOpen] = useState(false)
+
+  const openModal = () => setIsModalOpen(true)
+  const closeModal = () => setIsModalOpen(false)
+
+  const generateDiagram = async () => {
+    setIsLoading(true)
+    setError('')
+    setDiagram('')
+
+    const parser = new Parser()
+    try {
+      const ast = parser.astify(sql)
+      const tableInfo = extractTableInfo(ast, sql) // 传递原始 SQL 语句
+      const mermaidCode = generateMermaidCode(tableInfo)
+      
+      mermaid.initialize({ 
+        startOnLoad: true,
+        theme: 'base',
+        flowchart: {
+          useMaxWidth: false,
+          htmlLabels: true,
+          curve: 'basis'
+        },
+        themeVariables: {
+          primaryColor: '#f9f9f9',
+          primaryTextColor: '#000',
+          primaryBorderColor: '#000',
+          lineColor: '#000',
+          secondaryColor: '#fff',
+          tertiaryColor: '#fff'
+        }
+      });
+      const { svg } = await mermaid.render('mermaid-diagram', mermaidCode)
+      setDiagram(svg)
+    } catch (error) {
+      console.error('Error generating diagram:', error);
+      setError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const extractTableInfo = (ast, sql) => {
+    if (!Array.isArray(ast)) {
+      ast = [ast]
+    }
+
+    // 使用正则表达式提取注释信息
+    const commentRegex = /`(\w+)`\s+\w+.*COMMENT\s+'([^']+)'/gi
+    const comments = {}
+    let match
+    while ((match = commentRegex.exec(sql)) !== null) {
+      comments[match[1]] = match[2]
+    }
+
+    // 处理没有反引号的列名
+    const commentRegexNoBackticks = /(\w+)\s+\w+.*COMMENT\s+'([^']+)'/gi
+    while ((match = commentRegexNoBackticks.exec(sql)) !== null) {
+      comments[match[1]] = match[2]
+    }
+
+    return ast.filter(stmt => stmt.type === 'create').map(createStmt => {
+      const tableName = createStmt.table[0].table
+      const columns = createStmt.create_definitions.map(def => {
+        if (def.resource === 'column') {
+          const columnName = def.column.column
+          const columnInfo = {
+            name: columnName,
+            dataType: def.definition.dataType,
+            constraints: extractConstraints(def.definition),
+            comment: comments[columnName] || ''
+          }
+          console.log('Column Info:', columnInfo) // 添加日志信息
+          return columnInfo
+        }
+        return null
+      }).filter(Boolean)
+
+      return { tableName, columns }
+    })
+  }
+
+  const extractConstraints = (columnDef) => {
+    const constraints = []
+    if (columnDef.primary_key) constraints.push('PK')
+    if (columnDef.not_null) constraints.push('NOT NULL')
+    if (columnDef.unique) constraints.push('UNIQUE')
+    if (columnDef.default_val) constraints.push(`DEFAULT ${columnDef.default_val.value}`)
+    return constraints
+  }
+
+  const generateMermaidCode = (tablesInfo) => {
+    let code = 'erDiagram\n'
+    tablesInfo.forEach(tableInfo => {
+      code += `  ${tableInfo.tableName} {\n`
+      tableInfo.columns.forEach(column => {
+        code += `    ${column.dataType} ${column.name}`
+        if (column.constraints.length > 0) {
+          code += ` "${column.constraints.join(', ')}"`
+        }
+        if (column.comment) {
+          code += ` "${column.comment}"`
+        }
+        code += '\n'
+      })
+      code += '  }\n'
+    })
+    console.log('Generated Mermaid Code:', code) // 添加日志信息
+    return code
+  }
+
   return (
-    <main className="flex min-h-screen flex-col items-center justify-between p-24">
-      <div className="z-10 w-full max-w-5xl items-center justify-between font-mono text-sm lg:flex">
-        <p className="fixed left-0 top-0 flex w-full justify-center border-b border-gray-300 bg-gradient-to-b from-zinc-200 pb-6 pt-8 backdrop-blur-2xl dark:border-neutral-800 dark:bg-zinc-800/30 dark:from-inherit lg:static lg:w-auto  lg:rounded-xl lg:border lg:bg-gray-200 lg:p-4 lg:dark:bg-zinc-800/30">
-          Get started by editing&nbsp;
-          <code className="font-mono font-bold">app/page.tsx</code>
-        </p>
-        <div className="fixed bottom-0 left-0 flex h-48 w-full items-end justify-center bg-gradient-to-t from-white via-white dark:from-black dark:via-black lg:static lg:size-auto lg:bg-none">
-          <a
-            className="pointer-events-none flex place-items-center gap-2 p-8 lg:pointer-events-auto lg:p-0"
-            href="https://vercel.com?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            By{" "}
-            <Image
-              src="/vercel.svg"
-              alt="Vercel Logo"
-              className="dark:invert"
-              width={100}
-              height={24}
-              priority
+    <div className="min-h-screen bg-gradient-to-b from-gray-50 to-gray-100 py-12 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-4xl mx-auto">
+        <main className="bg-white shadow-lg rounded-lg overflow-hidden">
+          <div className="px-6 py-8 md:px-10">
+            <h1 className="text-3xl md:text-4xl font-bold text-center text-gray-900 mb-8">
+              ER Diagram Generator
+            </h1>
+
+            <textarea
+              value={sql}
+              onChange={(e) => setSql(e.target.value)}
+              placeholder="Enter your MySQL CREATE TABLE statement here..."
+              rows={10}
+              className="w-full mb-6 p-4 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 text-sm"
             />
-          </a>
-        </div>
+
+            <div className="flex justify-center mb-8">
+              <button 
+                onClick={generateDiagram}
+                disabled={isLoading}
+                className="px-6 py-3 bg-indigo-600 text-white font-semibold rounded-md shadow-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:opacity-50 transition duration-150 ease-in-out"
+              >
+                {isLoading ? 'Generating...' : 'Generate Diagram'}
+              </button>
+            </div>
+
+            {isLoading && <LoadingSpinner />}
+
+            {error && <ErrorMessage message={error} />}
+
+            {diagram && (
+              <div className="mt-8 bg-gray-50 rounded-md overflow-hidden">
+                <h2 className="text-xl font-semibold text-gray-900 bg-gray-100 px-6 py-3">Generated ER Diagram</h2>
+                <div className="p-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  <div onClick={openModal} className="cursor-pointer">
+                    <div dangerouslySetInnerHTML={{ __html: diagram }} className="overflow-auto max-w-full" style={{ minHeight: '600px' }} />
+                  </div>
+                </div>
+                <div className="mt-6 flex justify-center">
+                  <DownloadButton svgContent={diagram} fileName="er_diagram.svg" />
+                </div>
+              </div>
+            )}
+          </div>
+        </main>
       </div>
-
-      <div className="relative z-[-1] flex place-items-center before:absolute before:h-[300px] before:w-full before:-translate-x-1/2 before:rounded-full before:bg-gradient-radial before:from-white before:to-transparent before:blur-2xl before:content-[''] after:absolute after:-z-20 after:h-[180px] after:w-full after:translate-x-1/3 after:bg-gradient-conic after:from-sky-200 after:via-blue-200 after:blur-2xl after:content-[''] before:dark:bg-gradient-to-br before:dark:from-transparent before:dark:to-blue-700 before:dark:opacity-10 after:dark:from-sky-900 after:dark:via-[#0141ff] after:dark:opacity-40 sm:before:w-[480px] sm:after:w-[240px] before:lg:h-[360px]">
-        <Image
-          className="relative dark:drop-shadow-[0_0_0.3rem_#ffffff70] dark:invert"
-          src="/next.svg"
-          alt="Next.js Logo"
-          width={180}
-          height={37}
-          priority
-        />
-      </div>
-
-      <div className="mb-32 grid text-center lg:mb-0 lg:w-full lg:max-w-5xl lg:grid-cols-4 lg:text-left">
-        <a
-          href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className="mb-3 text-2xl font-semibold">
-            Docs{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className="m-0 max-w-[30ch] text-sm opacity-50">
-            Find in-depth information about Next.js features and API.
-          </p>
-        </a>
-
-        <a
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className="mb-3 text-2xl font-semibold">
-            Learn{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className="m-0 max-w-[30ch] text-sm opacity-50">
-            Learn about Next.js in an interactive course with&nbsp;quizzes!
-          </p>
-        </a>
-
-        <a
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className="mb-3 text-2xl font-semibold">
-            Templates{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className="m-0 max-w-[30ch] text-sm opacity-50">
-            Explore starter templates for Next.js.
-          </p>
-        </a>
-
-        <a
-          href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className="mb-3 text-2xl font-semibold">
-            Deploy{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className="m-0 max-w-[30ch] text-balance text-sm opacity-50">
-            Instantly deploy your Next.js site to a shareable URL with Vercel.
-          </p>
-        </a>
-      </div>
-    </main>
-  );
+    </div>
+  )
 }
