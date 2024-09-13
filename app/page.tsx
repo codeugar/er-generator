@@ -1,12 +1,24 @@
 'use client';
 import { useState } from 'react'
-import { Parser } from 'node-sql-parser'
+import { Parser, AST } from 'node-sql-parser'
 import mermaid from 'mermaid'
 import LoadingSpinner from './components/LoadingSpinner'
 import ErrorMessage from './components/ErrorMessage'
 import DownloadButton from './components/DownloadButton'
 import dynamic from 'next/dynamic'
 
+// 在文件顶部或函数外部添加以下接口定义
+interface TableInfo {
+  tableName: string;
+  columns: ColumnInfo[];
+}
+
+interface ColumnInfo {
+  name: string;
+  dataType: string;
+  constraints: string[];
+  comment: string;
+}
 
 export default function Home() {
   const [sql, setSql] = useState('')
@@ -56,47 +68,47 @@ export default function Home() {
     }
   }
 
-  const extractTableInfo = (ast, sql) => {
-    if (!Array.isArray(ast)) {
-      ast = [ast]
-    }
+  const extractTableInfo = (ast: AST | AST[], sql: string) => {
+    const astArray = Array.isArray(ast) ? ast : [ast];
 
     // 使用正则表达式提取注释信息
     const commentRegex = /`(\w+)`\s+\w+.*COMMENT\s+'([^']+)'/gi
-    const comments = {}
+    const comments: { [key: string]: string } = {}
     let match
     while ((match = commentRegex.exec(sql)) !== null) {
-      comments[match[1]] = match[2]
+      comments[match[1]] = match[2];
     }
 
     // 处理没有反引号的列名
     const commentRegexNoBackticks = /(\w+)\s+\w+.*COMMENT\s+'([^']+)'/gi
     while ((match = commentRegexNoBackticks.exec(sql)) !== null) {
-      comments[match[1]] = match[2]
+      comments[match[1]] = match[2];
     }
 
-    return ast.filter(stmt => stmt.type === 'create').map(createStmt => {
-      const tableName = createStmt.table[0].table
-      const columns = createStmt.create_definitions.map(def => {
+    return astArray.filter(stmt => stmt.type === 'create').map(createStmt => {
+      const tableName = createStmt.table?.[0]?.table || 'Unknown'
+      const columns = createStmt.create_definitions?.map(def => {
         if (def.resource === 'column') {
-          const columnName = def.column.column
+          const columnName = (typeof def.column.column === 'string' 
+            ? def.column.column 
+            : def.column.column.expr.value) as string;
           const columnInfo = {
             name: columnName,
             dataType: def.definition.dataType,
             constraints: extractConstraints(def.definition),
             comment: comments[columnName] || ''
           }
-          console.log('Column Info:', columnInfo) // 添加日志信息
+          console.log('Column Info:', columnInfo)
           return columnInfo
         }
         return null
-      }).filter(Boolean)
+      }).filter((col): col is NonNullable<typeof col> => col !== null) || []
 
       return { tableName, columns }
     })
   }
 
-  const extractConstraints = (columnDef) => {
+  const extractConstraints = (columnDef: any) => {
     const constraints = []
     if (columnDef.primary_key) constraints.push('PK')
     if (columnDef.not_null) constraints.push('NOT NULL')
@@ -105,7 +117,7 @@ export default function Home() {
     return constraints
   }
 
-  const generateMermaidCode = (tablesInfo) => {
+  const generateMermaidCode = (tablesInfo: TableInfo[]) => {
     let code = 'erDiagram\n'
     tablesInfo.forEach(tableInfo => {
       code += `  ${tableInfo.tableName} {\n`
