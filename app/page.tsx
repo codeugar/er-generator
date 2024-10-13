@@ -142,10 +142,12 @@ export default function Home() {
       <div className="max-w-4xl mx-auto">
         <main className="bg-white shadow-lg rounded-lg overflow-hidden">
           <div className="px-6 py-8 md:px-10">
-            <h1 className="text-3xl md:text-4xl font-bold text-center text-gray-900 mb-8">
-              ER Diagram Generator
-            </h1>
-
+          <h1 className="text-3xl md:text-4xl font-bold text-center text-gray-900 mb-4">
+            ER Diagram Generator
+          </h1>
+          <h2 className="text-xl md:text-2xl text-center text-gray-700 mb-8">
+            Create Entity Relationship Diagrams from MySQL Statements
+          </h2>
             <textarea
               value={sql}
               onChange={(e) => setSql(e.target.value)}
