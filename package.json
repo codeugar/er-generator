@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@headlessui/react": "^2.1.3",
+    "@next/third-parties": "^14.2.15",
     "mermaid": "^11.0.2",
     "next": "14.2.7",
     "node-sql-parser": "^5.3.1",
