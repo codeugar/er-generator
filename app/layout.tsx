@@ -11,7 +11,7 @@ export const metadata: Metadata = {
   title: "ER Diagram Generator | Create Entity Relationship Diagrams",
   description: "Generate ER diagrams from MySQL CREATE TABLE statements. Easy-to-use tool for database designers and developers.",
   keywords: "ER diagram, entity relationship, database design, MySQL, SQL parser",
-  author: "codeugar",
+  authors: [{name: "codeugar"}],
   openGraph: {
     title: "ER Diagram Generator",
     description: "Create Entity Relationship Diagrams from MySQL statements",
